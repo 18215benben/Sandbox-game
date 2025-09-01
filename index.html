@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simply Sandbox - Fixed Drawing</title>
+    <style>
+        /* Your existing CSS styles here */
+    </style>
+</head>
+<body>
+    <!-- Your existing HTML structure here -->
+
+    <script>
+        // ... (previous JavaScript code)
+
+        /* ================= Drawing ================= */
+        let mouseX = 0, mouseY = 0, mouseDown = false;
+        let lastDrawn = []; // Track recently drawn pixels to prevent overdrawing
+        const brushPreview = document.getElementById('brush-preview');
+
+        // Get canvas-relative coordinates from event
+        function getCanvasCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            let clientX, clientY;
+            
+            if (e.touches) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            return {
+                x: Math.floor((clientX - rect.left) * scaleX),
+                y: Math.floor((clientY - rect.top) * scaleY)
+            };
+        }
+
+        // Update brush preview
+        function updateBrushPreview() {
+            const size = brushSize * 2 + 2;
+            brushPreview.style.width = size + 'px';
+            brushPreview.style.height = size + 'px';
+            brushPreview.style.borderWidth = (brushSize > 2 ? '1px' : '2px');
+        }
+
+        // Handle mouse/touch events
+        canvas.addEventListener('mousedown', e => { 
+            mouseDown = true; 
+            lastDrawn = []; // Reset drawn positions
+            drawAt(e); 
+        });
+
+        canvas.addEventListener('mousemove', e => { 
+            if(mouseDown) drawAt(e); 
+        });
+
+        window.addEventListener('mouseup', () => mouseDown = false);
+
+        // Touch events
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            mouseDown = true;
+            lastDrawn = []; // Reset drawn positions
+            drawAt(e.touches[0]);
+        });
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if(mouseDown) drawAt(e.touches[0]);
+        });
+
+        canvas.addEventListener('touchend', () => mouseDown = false);
+        canvas.addEventListener('touchcancel', () => mouseDown = false);
+
+        // Improved drawing function
+        function drawAt(e){
+            const {x, y} = getCanvasCoords(e);
+            
+            // Draw with the selected brush size
+            for(let dx = -brushSize; dx <= brushSize; dx++){
+                for(let dy = -brushSize; dy <= brushSize; dy++){
+                    // Create a circular brush instead of square
+                    if(dx*dx + dy*dy > brushSize*brushSize) continue;
+                    
+                    const nx = x + dx, ny = y + dy;
+                    
+                    // Skip if out of bounds or recently drawn
+                    if(!inBounds(nx, ny) || lastDrawn.includes(`${nx},${ny}`)) continue;
+                    
+                    if(drawing){
+                        if(!grid[nx][ny]) {
+                            pixelCount++;
+                            
+                            // Track material count for achievements
+                            if (selectedMat.id) {
+                                materialCounts[selectedMat.id] = (materialCounts[selectedMat.id] || 0) + 1;
+                                
+                                // Update achievements
+                                if (selectedMat.id === 'stone') {
+                                    updateAchievementProgress('stone_master', materialCounts.stone);
+                                } else if (selectedMat.id === 'fire') {
+                                    updateAchievementProgress('fire_starter', materialCounts.fire);
+                                }
+                                
+                                // Check for first pixel achievement
+                                if (pixelCount === 1) {
+                                    updateAchievementProgress('first_pixel', 1);
+                                }
+                            }
+                        }
+                        grid[nx][ny] = {...selectedMat};
+                        lastDrawn.push(`${nx},${ny}`);
+                    } else {
+                        // Erase mode
+                        if(grid[nx][ny]) {
+                            pixelCount--;
+                            grid[nx][ny] = null;
+                            lastDrawn.push(`${nx},${ny}`);
+                        }
+                    }
+                }
+            }
+            updateStats();
+        }
+
+        /* ================= Rendering ================= */
+        function render(){
+            // Create a temporary buffer for drawing
+            const buffer = document.createElement('canvas');
+            buffer.width = COLS;
+            buffer.height = ROWS;
+            const bufferCtx = buffer.getContext('2d');
+            
+            // Clear the buffer
+            bufferCtx.fillStyle = '#000';
+            bufferCtx.fillRect(0, 0, COLS, ROWS);
+            
+            // Draw all pixels to the buffer
+            for(let x = 0; x < COLS; x++){
+                for(let y = 0; y < ROWS; y++){
+                    if(!grid[x][y]) continue;
+                    bufferCtx.fillStyle = grid[x][y].color;
+                    bufferCtx.fillRect(x, y, 1, 1);
+                }
+            }
+            
+            // Draw the buffer to the main canvas
+            ctx.clearRect(0, 0, COLS, ROWS);
+            ctx.drawImage(buffer, 0, 0);
+            
+            // Draw brush preview
+            if(inBounds(mouseX, mouseY)){
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, brushSize, 0, Math.PI*2);
+                ctx.stroke();
+            }
+        }
+
+        /* ================= Main Loop ================= */
+        function loop(timestamp){
+            requestAnimationFrame(loop);
+            
+            // Calculate FPS
+            if(!lastTime) lastTime = timestamp;
+            const delta = timestamp - lastTime;
+            if(delta > 0){
+                fps = 1000 / delta;
+                lastTime = timestamp;
+                
+                // Update play time
+                if(!paused) playTime += delta / 1000;
+                
+                // Update time traveler achievement
+                updateAchievementProgress('time_traveler', playTime);
+                
+                // Run simulation at specified speed
+                if(!paused && fps > 0){
+                    frameCount++;
+                    if(frameCount >= 60 / simSpeed){
+                        simulate();
+                        checkGoalCompletion();
+                        frameCount = 0;
+                    }
+                }
+                
+                // Update stats every second
+                if(Math.floor(playTime) > Math.floor(playTime - delta/1000)){
+                    updateStats();
+                }
+            }
+            
+            render();
+        }
+
+        /* ================= Initialize ================= */
+        initUI();
+        requestAnimationFrame(loop);
+
+        // Show daily challenge on first load
+        setTimeout(() => {
+            document.getElementById('daily-challenge').style.display = 'block';
+        }, 2000);
+    </script>
+</body>
+</html>
