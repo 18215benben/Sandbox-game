@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Simply Sandbox</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    --panel:#0f1720; --muted:#98a8b3; --accent:#06b6d4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#071822;color:#e6f2f7;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial;overflow:hidden;}
+  /* Canvas centered, fills space while staying crisp */
+  #stage{position:fixed; inset:0; display:flex; align-items:center; justify-content:center;}
+  #canvas{image-rendering:pixelated; background:#000; display:block;}
+  /* Goals top-left */
+  #goals{position:fixed; top:12px; left:12px; width:260px; background:rgba(15,23,32,.9); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:12px; z-index:30}
+  #goals h2{font-size:16px;margin-bottom:6px}
+  #goals ul{margin-left:18px; color:var(--muted); line-height:1.4}
+  /* Bottom-left circular buttons */
+  .fab{position:fixed; width:52px; height:52px; border-radius:50%; border:none; cursor:pointer; font-size:26px; display:flex; align-items:center; justify-content:center; background:#0a1b22; color:#fff; box-shadow:0 10px 30px rgba(0,0,0,.35); z-index:30}
+  .fab:hover{filter:brightness(1.1)}
+  #btn-instructions{left:12px; bottom:12px}
+  #btn-settings{left:76px; bottom:12px}
+  #btn-tools{left:140px; bottom:12px}
+  /* Right-side selector */
+  #selector{position:fixed; right:12px; top:12px; bottom:12px; width:280px; background:rgba(15,23,32,.9); border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:10px; z-index:25}
+  .cats{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .cat-btn{border:none; border-radius:12px; padding:8px; background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02)); color:#dff6f6; cursor:pointer; display:flex; align-items:center; gap:8px; font-weight:700}
+  .cat-btn span{font-size:18px}
+  .cat-btn.active{outline:2px solid var(--accent)}
+  .materials{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:2px}
+  .m-btn{width:56px;height:56px;border-radius:50%;border:none;background:#0a1b22;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:26px}
+  .m-btn.active{outline:2px solid var(--accent)}
+  .sel-label{font-size:12px; color:var(--muted); text-align:center; margin-top:-4px}
+  /* Modals */
+  .modal{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); z-index:40}
+  .card{background:#07171d; border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:18px; width:92%; max-width:640px}
+  .card h2{text-align:center;margin-bottom:10px}
+  .row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:10px}
+  .btn{border:none; border-radius:10px; padding:8px 10px; background:#0a1b22; color:#cfe7f2; cursor:pointer; font-weight:700}
+  .btn:hover{filter:brightness(1.1)}
+  .btn.active{background:var(--accent); color:#071822}
+  .label{font-weight:700;color:#dff6f6;margin-top:8px}
+  .muted{color:var(--muted)}
+  input[type=range]{width:100%}
+  /* Stats panel */
+  #stats{position:fixed; top:12px; left:280px; background:rgba(15,23,32,.9); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:12px; z-index:30; display:flex; gap:16px; font-size:14px}
+  .stat-item{display:flex; flex-direction:column; align-items:center}
+  .stat-value{font-weight:bold; color:var(--accent)}
+  /* Tutorial hints */
+  #tutorial-hint{position:fixed; bottom:70px; left:12px; background:rgba(15,23,32,.9); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:12px; z-index:30; max-width:260px; animation: pulse 2s infinite}
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+  /* Save/Load buttons */
+  #save-load{position:fixed; bottom:12px; left:204px; display:flex; gap:8px}
+  .save-load-btn{width:52px; height:52px; border-radius:50%; border:none; cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; background:#0a1b22; color:#fff; box-shadow:0 10px 30px rgba(0,0,0,.35); z-index:30}
+  @media (max-width: 900px){
+    #selector{width:240px}
+    .materials{grid-template-columns:repeat(3,1fr)}
+    .cats{grid-template-columns:1fr 1fr 1fr 1fr; overflow-x:auto; padding-bottom:5px}
+    .cat-btn{flex-direction:column; padding:6px; font-size:12px; text-align:center}
+    .cat-btn span{font-size:16px}
+    #stats{left:12px; top: auto; bottom: 140px; flex-wrap: wrap; justify-content: center;}
+  }
+</style>
+</head>
+<body>
+  <!-- Goals -->
+  <div id="goals">
+    <h2>🎯 Goals</h2>
+    <ul id="goals-list"></ul>
+    <div class="muted" style="margin-top:6px;font-size:12px">Complete a goal to get a new one.</div>
+  </div>
+
+  <!-- Stats -->
+  <div id="stats">
+    <div class="stat-item">
+      <div class="muted">Pixels</div>
+      <div id="pixel-count" class="stat-value">0</div>
+    </div>
+    <div class="stat-item">
+      <div class="muted">Time</div>
+      <div id="play-time" class="stat-value">0:00</div>
+    </div>
+    <div class="stat-item">
+      <div class="muted">Goals</div>
+      <div id="goals-completed" class="stat-value">0</div>
+    </div>
+  </div>
+
+  <!-- Tutorial Hint -->
+  <div id="tutorial-hint" style="display:none">
+    Try mixing different materials to see what happens!
+  </div>
+
+  <!-- Stage / Canvas -->
+  <div id="stage"><canvas id="canvas" width="320" height="180"></canvas></div>
+
+  <!-- Bottom-left FABs -->
+  <button id="btn-instructions" class="fab" title="Instructions">❓</button>
+  <button id="btn-settings" class="fab" title="Settings">⚙️</button>
+  <button id="btn-tools" class="fab" title="Tools">🔧</button>
+
+  <!-- Save/Load buttons -->
+  <div id="save-load">
+    <button id="btn-save" class="save-load-btn" title="Save">💾</button>
+    <button id="btn-load" class="save-load-btn" title="Load">📂</button>
+  </div>
+
+  <!-- Right selector -->
+  <aside id="selector" aria-label="materials selector">
+    <div class="cats" id="cat-row"></div>
+    <div class="materials" id="mat-grid"></div>
+    <div class="sel-label">Selected: <span id="sel-text">water 💧</span></div>
+  </aside>
+
+  <!-- Instructions -->
+  <div id="modal-instructions" class="modal" aria-hidden="true">
+    <div class="card">
+      <h2>How to Play</h2>
+      <p class="muted">
+        Left-click draws the selected material. Hold <b>Shift</b> to erase (or toggle Erase in Settings).<br>
+        <b>Fire</b> spreads to flammables and disappears if not burning.<br>
+        Touching <b>explosives</b> with fire detonates them (explosions don't fall).<br>
+        <b>Lava + Water</b> makes <b>Stone</b>. Liquids & powders fall; gases rise.
+      </p>
+      <div class="row">
+        <button class="btn close-modal">Got it!</button>
+        <button id="btn-tutorial" class="btn">Start Tutorial</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="modal-settings" class="modal" aria-hidden="true">
+    <div class="card">
+      <h2>Settings</h2>
+      <div class="row">
+        <button id="toggle-draw" class="btn">Draw Mode</button>
+        <button id="pause" class="btn">Pause</button>
+        <button id="clear" class="btn">Clear</button>
+      </div>
+      <div class="label">Brush size</div>
+      <input id="brushSize" type="range" min="1" max="16" value="4"/>
+      <div style="text-align:right" class="muted">Size: <span id="sizeDisplay">4</span></div>
+      <div class="label">Simulation Speed</div>
+      <input id="simSpeed" type="range" min="1" max="60" value="30"/>
+      <div style="text-align:right" class="muted">Speed: <span id="speedDisplay">30</span> FPS</div>
+      <div class="row" style="margin-top:10px"><button class="btn close-modal">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Tools -->
+  <div id="modal-tools" class="modal" aria-hidden="true">
+    <div class="card">
+      <h2>Tools</h2>
+      <div class="row">
+        <button id="tool-fill" class="btn">Fill Area</button>
+        <button id="tool-line" class="btn">Draw Line</button>
+        <button id="tool-circle" class="btn">Draw Circle</button>
+      </div>
+      <div class="row">
+        <button id="tool-rain" class="btn">Make it Rain</button>
+        <button id="tool-earthquake" class="btn">Earthquake</button>
+        <button id="tool-vacuum" class="btn">Vacuum</button>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn close-modal">Close</button></div>
+    </div>
+  </div>
+
+<script>
+/* ================= Canvas & scaling ================= */
+const COLS = 320, ROWS = 180;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha:false });
+function fitCanvas(){
+  const pad = 16;
+  const availW = innerWidth - (280 + 12 + 12 + pad);
+  const availH = innerHeight - pad*2;
+  const s = Math.floor(Math.min(availW / COLS, availH / ROWS)) || 1;
+  canvas.style.width = (COLS * s) + 'px';
+  canvas.style.height = (ROWS * s) + 'px';
+}
+addEventListener('resize', fitCanvas);
+fitCanvas();
+
+/* ================= World ================= */
+const grid = Array.from({length:COLS}, ()=>Array(ROWS).fill(null));
+const N4 = [[1,0],[-1,0],[0,1],[0,-1]];
+function inBounds(x,y){ return x>=0 && x<COLS && y>=0 && y<ROWS; }
+
+/* Materials — 8 per category */
+const MATERIALS = {
+  liquids: {
+    label:'💧 Liquids',
+    list: [
+      {id:'water',  emoji:'💧', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#2aa6ff', density: 1.0, viscosity: 0.8},
+      {id:'lava',   emoji:'🌋', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#ff5f3f', density: 1.2, viscosity: 0.9},
+      {id:'oil',    emoji:'🛢️', type:'liquid', gravity:true,  flammable:true,  explosive:false, color:'#0b0b0b', density: 0.9, viscosity: 0.7},
+      {id:'honey',  emoji:'🍯', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#d8a300', density: 1.4, viscosity: 0.95},
+      {id:'acid',   emoji:'🧪', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#7bff4a', density: 1.1, viscosity: 0.75},
+      {id:'blood',  emoji:'🩸', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#b00000', density: 1.05, viscosity: 0.85},
+      {id:'mercury',emoji:'☿️', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#b2b6c0', density: 1.5, viscosity: 0.6},
+      {id:'slime',  emoji:'🟢', type:'liquid', gravity:true,  flammable:false, explosive:false, color:'#21c021', density: 1.3, viscosity: 0.98},
+    ]
+  },
+  powders: {
+    label:'🌫 Powders',
+    list: [
+      {id:'sand',  emoji:'🖏️', type:'powder', gravity:true, flammable:false, explosive:false, color:'#ffd27a', density: 1.0},
+      {id:'salt',  emoji:'🧂', type:'powder', gravity:true, flammable:false, explosive:false, color:'#f0f3f7', density: 1.2},
+      {id:'sugar', emoji:'🚢', type:'powder', gravity:true, flammable:false, explosive:false, color:'#f8f8ff', density: 0.9},
+      {id:'snow',  emoji:'❄️', type:'powder', gravity:true, flammable:false, explosive:false, color:'#e7f5ff', density: 0.5},
+      {id:'ash',   emoji:'⚪', type:'powder', gravity:true, flammable:false, explosive:false, color:'#bfbfbf', density: 0.4},
+      {id:'dye',   emoji:'🟪', type:'powder', gravity:true, flammable:false, explosive:false, color:'#8d52ff', density: 0.8},
+      {id:'paint', emoji:'🎨', type:'powder', gravity:true, flammable:false, explosive:false, color:'#3fa7ff', density: 1.1},
+      {id:'mud',   emoji:'🟫', type:'powder', gravity:true, flammable:false, explosive:false, color:'#6a3e20', density: 1.3},
+    ]
+  },
+  solids: {
+    label:'🪨 Solids',
+    list: [
+      {id:'stone',  emoji:'🪨', type:'solid', gravity:false, flammable:false, explosive:false, color:'#8f9398'},
+      {id:'wood',   emoji:'🪵', type:'solid', gravity:false, flammable:true,  explosive:false, color:'#8b5a2b'},
+      {id:'brick',  emoji:'🧱', type:'solid', gravity:false, flammable:false, explosive:false, color:'#a9402b'},
+      {id:'clay',   emoji:'🟫', type:'solid', gravity:false, flammable:false, explosive:false, color:'#7e4a28'},
+      {id:'soil',   emoji:'🌱', type:'solid', gravity:false, flammable:false, explosive:false, color:'#4b3a26'},
+      {id:'gravel', emoji:'⚪', type:'solid', gravity:false, flammable:false, explosive:false, color:'#b5b5b5'},
+      {id:'cement', emoji:'🗏️', type:'solid', gravity:false, flammable:false, explosive:false, color:'#9aa0a6'},
+      {id:'crystal',emoji:'🔮', type:'solid', gravity:false, flammable:false, explosive:false, color:'#7ac7ff'},
+    ]
+  },
+  explosives: {
+    label:'💣 Explosives',
+    list: [
+      {id:'tnt',      emoji:'💣', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#a00000'},
+      {id:'dynamite', emoji:'🧨', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#b51212'},
+      {id:'rocket',   emoji:'🚀', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#c74343'},
+      {id:'bomb',     emoji:'💣', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#7c0000'},
+      {id:'grenade',  emoji:'💥', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#8a1d1d'},
+      {id:'barrel',   emoji:'🛢️', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#5a0e0e'},
+      {id:'mine',     emoji:'⛏️', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#6d1c1c'},
+      {id:'firework', emoji:'🎆', type:'explosive', gravity:false, flammable:false, explosive:true, color:'#d75050'},
+    ]
+  },
+  gases: {
+    label:'🌬️ Gases',
+    list: [
+      {id:'steam',   emoji:'💨', type:'gas', gravity:true,  flammable:false, explosive:false, color:'#e6f2f7', density: -0.8},
+      {id:'smoke',   emoji:'🌫️', type:'gas', gravity:true,  flammable:false, explosive:false, color:'#888888', density: -0.9},
+      {id:'oxygen',  emoji:'🫧', type:'gas', gravity:true,  flammable:true, explosive:false, color:'#a0d0ff', density: -0.7},
+      {id:'helium',  emoji:'🎈', type:'gas', gravity:true,  flammable:false, explosive:false, color:'#ffd0ff', density: -1.0},
+      {id:'methane', emoji:'🔥', type:'gas', gravity:true,  flammable:true, explosive:true, color:'#90ff90', density: -0.6},
+      {id:'neon',    emoji:'✨', type:'gas', gravity:true,  flammable:false, explosive:false, color:'#ff90ff', density: -0.85},
+      {id:'chlorine',emoji:'☣️', type:'gas', gravity:true,  flammable:false, explosive:false, color:'#90ff90', density: -0.5},
+      {id:'carbon',  emoji:'⚫', type:'gas', gravity:true,  flammable:false, explosive:false, color:'#444444', density: -0.4},
+    ]
+  },
+  plants: {
+    label:'🌿 Plants',
+    list: [
+      {id:'grass',   emoji:'🌾', type:'plant', gravity:false, flammable:true, explosive:false, color:'#3d7a3d'},
+      {id:'flower',  emoji:'🌸', type:'plant', gravity:false, flammable:true, explosive:false, color:'#ff69b4'},
+      {id:'tree',    emoji:'🌳', type:'plant', gravity:false, flammable:true, explosive:false, color:'#228b22'},
+      {id:'vine',    emoji:'🍃', type:'plant', gravity:false, flammable:true, explosive:false, color:'#4a7c4a'},
+      {id:'moss',    emoji:'🟢', type:'plant', gravity:false, flammable:false, explosive:false, color:'#5a8a5a'},
+      {id:'cactus',  emoji:'🌵', type:'plant', gravity:false, flammable:false, explosive:false, color:'#7a9a3a'},
+      {id:'bamboo',  emoji:'🎋', type:'plant', gravity:false, flammable:true, explosive:false, color:'#6b8e23'},
+      {id:'algae',   emoji:'🦠', type:'plant', gravity:false, flammable:false, explosive:false, color:'#2d6a2d'},
+    ]
+  },
+  metals: {
+    label:'⚙️ Metals',
+    list: [
+      {id:'iron',    emoji:'🔩', type:'metal', gravity:false, flammable:false, explosive:false, color:'#707070'},
+      {id:'gold',    emoji:'🟡', type:'metal', gravity:false, flammable:false, explosive:false, color:'#ffd700'},
+      {id:'silver',  emoji:'⚪', type:'metal', gravity:false, flammable:false, explosive:false, color:'#c0c0c0'},
+      {id:'copper',  emoji:'🟠', type:'metal', gravity:false, flammable:false, explosive:false, color:'#b87333'},
+      {id:'aluminum',emoji:'🔘', type:'metal', gravity:false, flammable:false, explosive:false, color:'#a8a8a8'},
+      {id:'titanium',emoji:'⚙️', type:'metal', gravity:false, flammable:false, explosive:false, color:'#878787'},
+      {id:'platinum',emoji:'💍', type:'metal', gravity:false, flammable:false, explosive:false, color:'#e5e4e2'},
+      {id:'bronze',  emoji:'🟤', type:'metal', gravity:false, flammable:false, explosive:false, color:'#cd7f32'},
+    ]
+  },
+  special: {
+    label:'✨ Special',
+    list: [
+      {id:'fire',    emoji:'🔥', type:'fire', gravity:false, flammable:false, explosive:false, color:'#ffb84d'},
+      {id:'ice',     emoji:'🧊', type:'special', gravity:false, flammable:false, explosive:false, color:'#a0e0ff'},
+      {id:'glass',   emoji:'🪟', type:'special', gravity:false, flammable:false, explosive:false, color:'#d0f0ff'},
+      {id:'plasma',  emoji:'⚡', type:'special', gravity:false, flammable:false, explosive:false, color:'#ff00ff'},
+      {id:'rubber',  emoji:'⚫', type:'special', gravity:false, flammable:true, explosive:false, color:'#202020'},
+      {id:'foam',   emoji:'🫧', type:'special', gravity:true, flammable:false, explosive:false, color:'#f0f0f0'},
+      {id:'gel',     emoji:'💧', type:'special', gravity:true, flammable:false, explosive:false, color:'#50d0ff'},
+      {id:'wax',     emoji:'🕯️', type:'special', gravity:false, flammable:true, explosive:false, color:'#fff5e6'},
+    ]
+  }
+};
+
+/* Flatten lookup by id */
+const MAT = {};
+for (const k of Object.keys(MATERIALS)){
+  if(!MATERIALS[k].list) continue;
+  for (const m of MATERIALS[k].list){ MAT[m.id]=m; }
+}
+MAT.fire = MATERIALS.special.list[0]; // add fire
+
+/* Selection UI */
+let currentCat = 'liquids';
+let selected = MAT.water;
+const catRow = document.getElementById('cat-row');
+const matGrid = document.getElementById('mat-grid');
+const selText = document.getElementById('sel-text');
+
+function renderCats(){
+  catRow.innerHTML='';
+  for(const [key,cat] of Object.entries(MATERIALS)){
+    const b=document.createElement('button');
+    b.className='cat-btn' + (key===currentCat?' active':'');
+    b.innerHTML=`<span>${cat.label.split(' ')[0]}</span> ${cat.label.split(' ').slice(1).join(' ')}`;
+    b.onclick=()=>{ currentCat=key; renderCats(); renderMats(); };
+    catRow.appendChild(b);
+  }
+}
+function renderMats(){
+  matGrid.innerHTML='';
+  MATERIALS[currentCat].list.forEach(m=>{
+    const b=document.createElement('button');
+    b.className='m-btn'+(selected.id===m.id?' active':'');
+    b.title=m.id;
+    b.textContent=m.emoji;
+    b.onclick=()=>{ selected = m; selText.textContent = `${m.id} ${m.emoji}`; renderMats(); };
+    matGrid.appendChild(b);
+  });
+}
+renderCats(); renderMats(); selText.textContent=`${selected.id} ${selected.emoji}`;
+
+/* Goals */
+const GOAL_POOL = [
+  {type:'place', name:'water', target:30, label:'💧 Place 30 water pixels'},
+  {type:'place', name:'sand', target:50, label:'🖏️ Place 50 sand pixels'},
+  {type:'mix',   name:'lava-water', target:1, label:'🌋 Mix lava + water (make stone)'},
+  {type:'burn',  name:'wood', target:10, label:'🔥 Burn 10 wood pixels'},
+  {type:'ignite',name:'explosive', target:1, label:'💥 Ignite an explosive'},
+  {type:'place', name:'stone', target:20, label:'🪨 Create 20 stone pixels'},
+  {type:'place', name:'oil', target:25, label:'🛢️ Place 25 oil pixels'},
+  {type:'place', name:'honey', target:25, label:'🍯 Place 25 honey pixels'},
+  {type:'mix',   name:'acid-metal', target:1, label:'🧪 Test acid on metal'},
+  {type:'create',name:'steam', target:5, label:'💨 Create 5 steam particles'},
+  {type:'create',name:'smoke', target:10, label:'🌫️ Create 10 smoke particles'},
+  {type:'place', name:'gold', target:15, label:'🟡 Place 15 gold pixels'}
+];
+function pickGoal(){
+  const g = GOAL_POOL[Math.floor(Math.random()*GOAL_POOL.length)];
+  return {...g, id:Math.random().toString(36).slice(2,9), progress:0};
+}
+let GOALS=[pickGoal(),pickGoal(),pickGoal()];
+let goalsCompleted = 0;
+const goalsUl=document.getElementById('goals-list');
+function renderGoals(){
+  goalsUl.innerHTML='';
+  GOALS.forEach(g=>{
+    const li=document.createElement('li');
+    li.textContent = g.type==='place' ? `${g.label} — ${g.progress}/${g.target}` : g.label;
+    goalsUl.appendChild(li);
+  });
+  document.getElementById('goals-completed').textContent = goalsCompleted;
+}
+renderGoals();
+
+/* Stats tracking */
+let pixelCount = 0;
+let playTime = 0;
+let playTimer = null;
+
+function updateStats() {
+  // Count pixels
+  let count = 0;
+  for(let x=0; x<COLS; x++) {
+    for(let y=0; y<ROWS; y++) {
+      if(grid[x][y]) count++;
+    }
+  }
+  pixelCount = count;
+  document.getElementById('pixel-count').textContent = pixelCount;
+  
+  // Update time
+  const minutes = Math.floor(playTime / 60);
+  const seconds = playTime % 60;
+  document.getElementById('play-time').textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+}
+
+/* Input */
+let brushSize=4, drawMode=true, paused=false;
+const mouse={gx:0, gy:0, down:false, startX:0, startY:0};
+let currentTool = 'brush'; // Default tool
+
+function toGrid(clientX, clientY){
+  const r=canvas.getBoundingClientRect();
+  const sx=COLS/r.width, sy=ROWS/r.height;
+  const gx=Math.floor((clientX-r.left)*sx), gy=Math.floor((clientY-r.top)*sy);
+  return { gx:Math.max(0,Math.min(COLS-1,gx)), gy:Math.max(0,Math.min(ROWS-1,gy)) };
+}
+
+canvas.addEventListener('mousedown',e=>{ 
+  mouse.down=true; 
+  const p=toGrid(e.clientX,e.clientY); 
+  mouse.startX = p.gx;
+  mouse.startY = p.gy;
+  
+  if (currentTool === 'brush') {
+    paintAt(p.gx, p.gy);
+  }
+  
+  // Start play timer if not already started
+  if (!playTimer) {
+    playTimer = setInterval(() => {
+      playTime++;
+      updateStats();
+    }, 1000);
+  }
+});
+
+addEventListener('mouseup',()=> {
+  if (mouse.down && currentTool !== 'brush') {
+    const p = toGrid(event.clientX, event.clientY);
+    useTool(mouse.startX, mouse.startY, p.gx, p.gy);
+  }
+  mouse.down=false;
+});
+
+canvas.addEventListener('mousemove',e=>{ 
+  const p=toGrid(e.clientX,e.clientY); 
+  mouse.gx=p.gx; 
+  mouse.gy=p.gy; 
+  if(mouse.down && currentTool === 'brush') paintAt(mouse.gx,mouse.gy); 
+});
+
+addEventListener('keydown',e=>{ if(e.key==='Shift'){ drawMode=false; }});
+addEventListener('keyup',e=>{ if(e.key==='Shift'){ drawMode=true; }});
+
+function paintAt(gx,gy){
+  const r=brushSize;
+  for(let dx=-r; dx<=r; dx++){
+    for(let dy=-r; dy<=r; dy++){
+      if(dx*dx+dy*dy>r*r) continue;
+      const x=gx+dx, y=gy+dy;
+      if(!inBounds(x,y)) continue;
+      if(!drawMode){ grid[x][y]=null; continue; }
+      grid[x][y]=selected;
+      // Update "place" goals live
+      GOALS.forEach(g=>{ if(g.type==='place' && g.name===selected.id) g.progress++; });
+    }
+  }
+  updateStats();
+  renderGoals();
+}
+
+/* Tool implementations */
+function useTool(startX, startY, endX, endY) {
+  switch(currentTool) {
+    case 'line':
+      drawLine(startX, startY, endX, endY);
+      break;
+    case 'circle':
+      drawCircle(startX, startY, endX, endY);
+      break;
+    case 'fill':
+      fillArea(startX, startY);
+      break;
+    case 'rain':
+      makeItRain();
+      break;
+    case 'earthquake':
+      createEarthquake();
+      break;
+    case 'vacuum':
+      createVacuum();
+      break;
+  }
+  updateStats();
+  renderGoals();
+}
+
+function drawLine(x1, y1, x2, y2) {
+  const dx = Math.abs(x2 - x1);
+  const dy = Math.abs(y2 - y1);
+  const sx = (x1 < x2) ? 1 : -1;
+  const sy = (y1 < y2) ? 1 : -1;
+  let err = dx - dy;
+  
+  while(true) {
+    for(let dx=-brushSize; dx<=brushSize; dx++){
+      for(let dy=-brushSize; dy<=brushSize; dy++){
+        if(dx*dx+dy*dy>brushSize*brushSize) continue;
+        const x = x1 + dx, y = y1 + dy;
+        if(!inBounds(x,y)) continue;
+        if(!drawMode){ grid[x][y]=null; continue; }
+        grid[x][y]=selected;
+        GOALS.forEach(g=>{ if(g.type==='place' && g.name===selected.id) g.progress++; });
+      }
+    }
+    
+    if (x1 === x2 && y1 === y2) break;
+    const e2 = 2*err;
+    if (e2 > -dy) { err -= dy; x1 += sx; }
+    if (e2 < dx) { err += dx; y1 += sy; }
+  }
+}
+
+function drawCircle(cx, cy, x2, y2) {
+  const radius = Math.sqrt(Math.pow(x2 - cx, 2) + Math.pow(y2 - cy, 2));
+  for (let x = -radius; x <= radius; x++) {
+    for (let y = -radius; y <= radius; y++) {
+      if (x*x + y*y <= radius*radius) {
+        const px = cx + x;
+        const py = cy + y;
+        if (inBounds(px, py)) {
+          if (!drawMode) {
+            grid[px][py] = null;
+          } else {
+            grid[px][py] = selected;
+            GOALS.forEach(g => { if (g.type === 'place' && g.name === selected.id) g.progress++; });
+          }
+        }
+      }
+    }
+  }
+}
+
+function fillArea(x, y) {
+  const targetMat = grid[x][y];
+  const queue = [{x, y}];
+  const visited = new Set();
+  
+  while (queue.length > 0) {
+    const {x, y} = queue.shift();
+    const key = `${x},${y}`;
+    
+    if (!inBounds(x, y) || visited.has(key) || grid[x][y] !== targetMat) continue;
+    
+    visited.add(key);
+    
+    if (!drawMode) {
+      grid[x][y] = null;
+    } else {
+      grid[x][y] = selected;
+      GOALS.forEach(g => { if (g.type === 'place' && g.name === selected.id) g.progress++; });
+    }
+    
+    // Add neighbors to the queue
+    queue.push({x: x+1, y});
+    queue.push({x: x-1, y});
+    queue.push({x, y: y+1});
+    queue.push({x, y: y-1});
+  }
+}
+
+function makeItRain() {
+  for (let x = 0; x < COLS; x++) {
+    if (Math.random() < 0.3) {
+      // For gases, start at the bottom so they can rise
+      const startY = selected.density < 0 ? ROWS - 1 : 0;
+      grid[x][startY] = selected;
+      GOALS.forEach(g => { if (g.type === 'place' && g.name === selected.id) g.progress++; });
+    }
+  }
+}
+
+function createEarthquake() {
+  for (let x = 0; x < COLS; x++) {
+    for (let y = ROWS - 1; y >= 0; y--) {
+      if (grid[x][y] && Math.random() < 0.4) {
+        // Only affect materials with gravity
+        if (grid[x][y].gravity) {
+          if (grid[x][y].density < 0) {
+            // Gases rise
+            if (inBounds(x, y-1) && !grid[x][y-1]) {
+              grid[x][y-1] = grid[x][y];
+              grid[x][y] = null;
+            }
+          } else {
+            // Liquids and powders fall
+            if (inBounds(x, y+1) && !grid[x][y+1]) {
+              grid[x][y+1] = grid[x][y];
+              grid[x][y] = null;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function createVacuum() {
+  for (let x = 0; x < COLS; x++) {
+    for (let y = 0; y < ROWS; y++) {
+      if (grid[x][y] && Math.random() < 0.7) {
+        grid[x][y] = null;
+      }
+    }
+  }
+}
+
+/* Physics helpers */
+function setCell(x,y,mat){ if(inBounds(x,y)) grid[x][y]=mat; }
+function getCell(x,y){ return inBounds(x,y) ? grid[x][y] : null; }
+function explodeAt(cx,cy,r=3){
+  for(let dx=-r; dx<=r; dx++){
+    for(let dy=-r; dy<=r; dy++){
+      const nx=cx+dx, ny=cy+dy;
+      if(!inBounds(nx,ny)) continue;
+      if(Math.hypot(dx,dy)<=r) grid[nx][ny]=MAT.fire; // explosion becomes temporary fire
+    }
+  }
+}
+
+/* Physics step */
+let burnedWood=0, mixedLW=0, ignited=false;
+function step(){
+  if(paused) return;
+  burnedWood=0; mixedLW=0; ignited=false;
+
+  // bottom-up sweep for falling materials
+  for(let y=ROWS-2; y>=0; y--){
+    for(let x=0; x<COLS; x++){
+      const c = grid[x][y];
+      if(!c) continue;
+
+      // Gravity (explosives never fall)
+      if(c.gravity && c.type!=='explosive'){
+        // Gases rise (negative density)
+        if(c.density < 0) {
+          if(!grid[x][y-1]) {
+            grid[x][y-1] = c;
+            grid[x][y] = null;
+            continue;
+          }
+          
+          // Gases can spread sideways as they rise
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          if(inBounds(x+dir, y-1) && !grid[x+dir][y-1]) {
+            grid[x+dir][y-1] = c;
+            grid[x][y] = null;
+            continue;
+          }
+          
+          // Try the other direction
+          const otherDir = -dir;
+          if(inBounds(x+otherDir, y-1) && !grid[x+otherDir][y-1]) {
+            grid[x+otherDir][y-1] = c;
+            grid[x][y] = null;
+            continue;
+          }
+        } 
+        // Liquids and powders fall (positive density)
+        else {
+          // Different behavior for liquids vs powders
+          if(c.type === 'liquid') {
+            // Liquids flow more naturally
+            if(!grid[x][y+1]) {
+              grid[x][y+1]=c;
+              grid[x][y]=null;
+              continue;
+            }
+            
+            // Liquids can flow sideways more easily
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            if(inBounds(x+dir, y) && !grid[x+dir][y] && (!grid[x+dir][y+1] || 
+               (grid[x+dir][y+1] && grid[x+dir][y+1].type === 'liquid' && 
+                grid[x+dir][y+1].density < c.density))) {
+              grid[x+dir][y]=c;
+              grid[x][y]=null;
+              continue;
+            }
+            
+            // Try the other direction
+            const otherDir = -dir;
+            if(inBounds(x+otherDir, y) && !grid[x+otherDir][y] && (!grid[x+otherDir][y+1] || 
+               (grid[x+otherDir][y+1] && grid[x+otherDir][y+1].type === 'liquid' && 
+                grid[x+otherDir][y+1].density < c.density))) {
+              grid[x+otherDir][y]=c;
+              grid[x][y]=null;
+              continue;
+            }
+          } else if (c.type === 'powder') {
+            // Powders just fall straight down or slide
+            if(!grid[x][y+1]){
+              grid[x][y+1]=c;
+              grid[x][y]=null;
+              continue;
+            }
+            
+            // Powders slide at an angle
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            if(inBounds(x+dir, y+1) && !grid[x+dir][y+1]){
+              grid[x+dir][y+1]=c;
+              grid[x][y]=null;
+              continue;
+            }
+          }
+        }
+      }
+
+      // Fire behavior: spread to flammables; disappear if not burning this frame
+      if(c.id==='fire'){
+        let burning=false;
+        for(const [dx,dy] of N4){
+          const nx=x+dx, ny=y+dy;
+          const n=getCell(nx,ny);
+          if(!n) continue;
+          
+          // Explosives should explode, not burn
+          if(n.explosive){
+            explodeAt(nx,ny,5); // Bigger explosion for explosives
+            setCell(nx,ny,null);
+            ignited=true;
+            burning=true;
+            continue;
+          }
+          
+          if(n.flammable){
+            setCell(nx,ny,MAT.fire);
+            burning=true;
+            if(n.id==='wood') burnedWood++;
+          }
+        }
+        if(!burning){ grid[x][y]=null; }
+        continue;
+      }
+
+      // Lava + water -> stone (both sides)
+      if(c.id==='lava'){
+        for(const [dx,dy] of N4){
+          const n = getCell(x+dx,y+dy);
+          if(n?.id==='water'){
+            setCell(x,y,MAT.stone);
+            setCell(x+dx,y+dy,MAT.stone);
+            mixedLW++;
+          }
+        }
+      }
+
+      // Acid + metal -> corrosion
+      if(c.id==='acid'){
+        for(const [dx,dy] of N4){
+          const n = getCell(x+dx,y+dy);
+          if(n && n.type==='metal'){
+            setCell(x+dx,y+dy,MAT.steam); // Metal corrodes and releases steam
+            GOALS.forEach(g=>{ if(g.type==='mix' && g.name==='acid-metal') g.progress++; });
+          }
+        }
+      }
+
+      // Fire + ice -> water
+      if(c.id==='fire'){
+        for(const [dx,dy] of N4){
+          const n = getCell(x+dx,y+dy);
+          if(n?.id==='ice'){
+            setCell(x+dx,y+dy,MAT.water);
+          }
+        }
+      }
+
+      // Steam + cold surfaces -> water
+      if(c.id==='steam'){
+        for(const [dx,dy] of N4){
+          const n = getCell(x+dx,y+dy);
+          if(n?.id==='ice'){
+            setCell(x,y,MAT.water);
+          }
+        }
+      }
+
+      // Methane + fire -> explosion
+      if(c.id==='methane'){
+        for(const [dx,dy] of N4){
+          if(getCell(x+dx,y+dy)?.id==='fire'){
+            explodeAt(x,y,3);
+            setCell(x,y,null);
+            break;
+          }
+        }
+      }
+
+      // Explosive: if touching fire, explode (not burn)
+      if(c.explosive){
+        for(const [dx,dy] of N4){
+          if(getCell(x+dx,y+dy)?.id==='fire'){
+            explodeAt(x,y,5); // Big explosion
+            setCell(x,y,null);
+            ignited=true;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Goals: check completion & replace
+  for(let i=GOALS.length-1;i>=0;i--){
+    const g=GOALS[i];
+    let completed = false;
+    
+    if(g.type==='place'){
+      completed = g.progress >= g.target;
+    }else if(g.type==='mix'){
+      completed = mixedLW >= g.target;
+    }else if(g.type==='burn'){
+      completed = burnedWood >= g.target;
+    }else if(g.type==='ignite'){
+      completed = ignited;
+    }else if(g.type==='create'){
+      // Count how many of this material exist
+      let count = 0;
+      for(let x=0; x<COLS; x++) {
+        for(let y=0; y<ROWS; y++) {
+          if(grid[x][y]?.id === g.name) count++;
+        }
+      }
+      completed = count >= g.target;
+    }
+    
+    if(completed){ 
+      GOALS.splice(i,1); 
+      GOALS.push(pickGoal()); 
+      goalsCompleted++;
+      
+      // Show celebration effect for completed goals
+      if (goalsCompleted % 3 === 0) {
+        showCelebration();
+      }
+    }
+  }
+  
+  updateStats();
+  renderGoals();
+}
+
+/* Celebration effect */
+function showCelebration() {
+  for (let i = 0; i < 20; i++) {
+    setTimeout(() => {
+      const x = Math.floor(Math.random() * COLS);
+      const y = Math.floor(Math.random() * ROWS);
+      if (inBounds(x, y)) {
+        const types = ['firework', 'fire', 'plasma'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        grid[x][y] = MAT[type];
+        
+        if (type === 'firework') {
+          setTimeout(() => explodeAt(x, y, 3), 300);
+        }
+      }
+    }, i * 100);
+  }
+}
+
+/* Render */
+function draw(){
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,COLS,ROWS);
+  for(let x=0;x<COLS;x++){
+    for(let y=0;y<ROWS;y++){
+      const c = grid[x][y]; if(!c) continue;
+      ctx.fillStyle = c.color || '#ffffff';
+      ctx.fillRect(x,y,1,1);
+    }
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+let simSpeed = 30;
+let simInterval = setInterval(step, 1000/simSpeed);
+
+/* Modals */
+function hookModal(btnId, modalId){
+  const btn=document.getElementById(btnId), modal=document.getElementById(modalId);
+  btn.addEventListener('click',()=>{ modal.style.display='flex'; });
+  modal.querySelectorAll('.close-modal').forEach(b=> b.addEventListener('click',()=> modal.style.display='none'));
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.style.display='none'; });
+}
+hookModal('btn-instructions','modal-instructions');
+hookModal('btn-settings','modal-settings');
+hookModal('btn-tools','modal-tools');
+
+/* Settings actions */
+const toggleBtn = document.getElementById('toggle-draw');
+const pauseBtn  = document.getElementById('pause');
+const clearBtn  = document.getElementById('clear');
+const sizeInput = document.getElementById('brushSize');
+const sizeDisp  = document.getElementById('sizeDisplay');
+const speedInput = document.getElementById('simSpeed');
+const speedDisp  = document.getElementById('speedDisplay');
+
+toggleBtn.addEventListener('click',()=>{
+  drawMode = !drawMode;
+  toggleBtn.textContent = drawMode ? 'Draw Mode' : 'Erase Mode';
+});
+pauseBtn.addEventListener('click',()=>{
+  paused = !paused;
+  if(paused){ 
+    pauseBtn.textContent='Resume'; 
+    clearInterval(playTimer);
+    playTimer = null;
+  } else { 
+    pauseBtn.textContent='Pause'; 
+    if (!playTimer) {
+      playTimer = setInterval(() => {
+        playTime++;
+        updateStats();
+      }, 1000);
+    }
+  }
+});
+clearBtn.addEventListener('click', ()=>{
+  for(let x=0;x<COLS;x++) for(let y=0;y<ROWS;y++) grid[x][y]=null;
+  updateStats();
+});
+sizeInput.addEventListener('input',()=>{
+  brushSize = parseInt(sizeInput.value,10) || 1;
+  sizeDisp.textContent = brushSize;
+});
+speedInput.addEventListener('input',()=>{
+  simSpeed = parseInt(speedInput.value,10) || 30;
+  speedDisp.textContent = simSpeed;
+  clearInterval(simInterval);
+  simInterval = setInterval(step, 1000/simSpeed);
+});
+
+/* Tool actions */
+const toolButtons = {
+  'fill': document.getElementById('tool-fill'),
+  'line': document.getElementById('tool-line'),
+  'circle': document.getElementById('tool-circle'),
+  'rain': document.getElementById('tool-rain'),
+  'earthquake': document.getElementById('tool-earthquake'),
+  'vacuum': document.getElementById('tool-vacuum')
+};
+
+// Set up tool buttons
+for (const [tool, button] of Object.entries(toolButtons)) {
+  button.addEventListener('click', () => {
+    // Reset all buttons
+    Object.values(toolButtons).forEach(btn => btn.classList.remove('active'));
+    
+    if (currentTool === tool) {
+      // If clicking the same tool, revert to brush
+      currentTool = 'brush';
+    } else {
+      // Select this tool
+      currentTool = tool;
+      button.classList.add('active');
+      
+      // Special tools that execute immediately
+      if (tool === 'rain' || tool === 'earthquake' || tool === 'vacuum') {
+        useTool(0, 0, 0, 0); // Parameters don't matter for these tools
+        currentTool = 'brush'; // Revert to brush after using special tool
+        button.classList.remove('active');
+      }
+    }
+  });
+}
+
+/* Save/Load functionality */
+const saveBtn = document.getElementById('btn-save');
+const loadBtn = document.getElementById('btn-load');
+
+saveBtn.addEventListener('click', () => {
+  const saveData = {
+    grid: grid.map(col => col.map(cell => cell ? cell.id : null)),
+    playTime: playTime,
+    goalsCompleted: goalsCompleted,
+    goals: GOALS
+  };
+  localStorage.setItem('simplySandboxSave', JSON.stringify(saveData));
+  
+  // Show confirmation
+  const hint = document.getElementById('tutorial-hint');
+  hint.textContent = 'Game saved successfully!';
+  hint.style.display = 'block';
+  setTimeout(() => { hint.style.display = 'none'; }, 2000);
+});
+
+loadBtn.addEventListener('click', () => {
+  const saveData = localStorage.getItem('simplySandboxSave');
+  if (saveData) {
+    const data = JSON.parse(saveData);
+    
+    // Restore grid
+    for(let x=0; x<COLS; x++) {
+      for(let y=0; y<ROWS; y++) {
+        const id = data.grid[x][y];
+        grid[x][y] = id ? MAT[id] : null;
+      }
+    }
+    
+    // Restore stats
+    playTime = data.playTime || 0;
+    goalsCompleted = data.goalsCompleted || 0;
+    GOALS = data.goals || [pickGoal(), pickGoal(), pickGoal()];
+    
+    updateStats();
+    renderGoals();
+    
+    // Show confirmation
+    const hint = document.getElementById('tutorial-hint');
+    hint.textContent = 'Game loaded successfully!';
+    hint.style.display = 'block';
+    setTimeout(() => { hint.style.display = 'none'; }, 2000);
+  }
+});
+
+/* Tutorial system */
+const tutorialBtn = document.getElementById('btn-tutorial');
+let tutorialStep = 0;
+const tutorialSteps = [
+  "Welcome! Click anywhere to place water",
+  "Now try placing some sand - it will fall down",
+  "Place lava next to water to create stone",
+  "Place wood and then set it on fire with the fire material",
+  "Try placing an explosive and then ignite it with fire",
+  "Great job! Now explore other materials and combinations"
+];
+
+tutorialBtn.addEventListener('click', () => {
+  tutorialStep = 0;
+  startTutorial();
+});
+
+function startTutorial() {
+  if (tutorialStep >= tutorialSteps.length) return;
+  
+  const hint = document.getElementById('tutorial-hint');
+  hint.textContent = tutorialSteps[tutorialStep];
+  hint.style.display = 'block';
+  
+  // Auto-advance tutorial after some time or interaction
+  setTimeout(() => {
+    if (tutorialStep < tutorialSteps.length - 1) {
+      tutorialStep++;
+      startTutorial();
+    }
+  }, 10000);
+}
+
+/* First layout pass */
+fitCanvas();
+
+/* Show initial hint */
+setTimeout(() => {
+  const hint = document.getElementById('tutorial-hint');
+  hint.textContent = "Drag to draw materials. Try combining different elements!";
+  hint.style.display = 'block';
+  setTimeout(() => { hint.style.display = 'none'; }, 5000);
+}, 2000);
+</script>
+</body>
+</html>
